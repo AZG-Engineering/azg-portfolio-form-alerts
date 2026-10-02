@@ -1,0 +1,2 @@
+# Only for tools\frame_screenshots.py. The script and its tests need no packages.
+Pillow==12.3.0
