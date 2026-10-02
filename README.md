@@ -119,8 +119,20 @@ send email as the owner, run triggers, and see the owner's email address.
 Nothing is copied into this repository from a third party: no templates, icons or
 code.
 
-- The script uses only Google's built-in Apps Script services.
-- The tests use only Node's built-in test runner. No npm packages, no
-  `package.json`.
-- `tools\frame_screenshots.py` uses Pillow 12.3.0 (MIT-CMU licence), installed by pip
-  into `.venv`, and the Segoe UI font that ships with Windows.
+Needed to run the script: nothing to install. It uses only Google's built-in Apps
+Script services (SpreadsheetApp, MailApp, ScriptApp, Session, Utilities).
+
+Needed to run the tests: Node 20 or newer. They use only Node's built-in test
+runner and modules. There are no npm packages and no `package.json`.
+
+Needed only for the screenshot framing tool (`requirements-tools.txt`), installed
+by pip into `.venv`:
+
+| Package | Version | Licence | Used for |
+| --- | --- | --- | --- |
+| Pillow | 12.3.0 | MIT-CMU | `tools\frame_screenshots.py`: composing the 1600x1200 images |
+
+Pillow has no other Python dependencies. Everything a buyer would run, the two
+`.gs` files, has no third-party dependency at all.
+
+The framed screenshots use the Segoe UI font that ships with Windows.
