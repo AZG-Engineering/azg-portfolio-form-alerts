@@ -22,6 +22,16 @@ Screen captures are never enlarged beyond 2x (MAX_CAPTURE_UPSCALE): pass
 max_upscale to place() or labelled_stack(). Vector exports (PDF pages) can be
 rendered at any size before they are passed in.
 
+A cover (the first image of a listing) is different, because platforms crop it
+to a wider frame. cover() puts the headline, the content card and the demo label
+inside a band that survives a centred crop to 16:9 and to 2:1, with nothing but
+background outside it:
+
+    card = kit.new_cover_card()                 # a white 1480x608 image to draw on
+    kit.place(card, export_image, kit.inner(card))
+    kit.cover(card, "See overdue work at a glance", out_path)
+    kit.cover_previews(out_path, work_dir)      # both crops, and 400 px thumbnails
+
 The fonts are the Inter files in the fonts folder next to this module. No system
 font is used.
 
@@ -35,7 +45,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-__version__ = "1.0.0"  # template for style guide v1.0
+__version__ = "1.1.0"  # template for style guide v1.2 (1.1.0 adds cover-safe covers)
 
 FONTS = Path(__file__).resolve().parent / "fonts"
 FONT_FILES = {"regular": "Inter-Regular.ttf", "semibold": "Inter-SemiBold.ttf"}
@@ -58,6 +68,24 @@ CAPTION_SIZES = (48, 44)
 FOOTNOTE = "Demo · sample data"
 MAX_CAPTURE_UPSCALE = 2.0
 MIN_READABLE_PX, MIN_HEADLINE_PX = 20, 72
+
+# Cover-safe covers (style guide section 5, "Cover-safe").
+# Everything that carries meaning stays inside the band (left, top, right, bottom).
+COVER_BAND = (60, 220, WIDTH - 60, 980)
+COVER_CROPS = {  # the centred crops a platform may apply to a 1600x1200 cover
+    "16x9": (0, 150, WIDTH, 1050),  # 1600x900
+    "2x1": (0, 200, WIDTH, 1000),  # 1600x800
+}
+COVER_HEADLINE_SIZES = (76, 72, 68, 64)  # the largest that fits is used; never under 64
+COVER_HEADLINE_Y = 270  # vertical middle of the headline line
+COVER_CARD_BOX = (COVER_BAND[0], 326, COVER_BAND[2], 934)
+COVER_CARD_SIZE = (COVER_CARD_BOX[2] - COVER_CARD_BOX[0], COVER_CARD_BOX[3] - COVER_CARD_BOX[1])  # 1480 x 608
+COVER_LABEL_Y = 958  # vertical middle of the "Demo - sample data" label
+COVER_STYLES = {
+    # background, headline colour, label colour, card border or None
+    "navy": (NAVY, WHITE, LINE, None),
+    "surface": (SURFACE, NAVY, SLATE, LINE),
+}
 
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
 
@@ -158,15 +186,18 @@ ARROW_GAP = 84  # space between the two panels, holding the arrow
 
 def before_after(before: Image.Image, after: Image.Image, orientation: str = "horizontal", share: float = 0.5,
                  before_note: str = "", after_note: str = "", before_upscale: float | None = None,
-                 after_upscale: float | None = None, border: bool = True) -> tuple[Image.Image, tuple[float, float]]:
+                 after_upscale: float | None = None, border: bool = True,
+                 card: Image.Image | None = None) -> tuple[Image.Image, tuple[float, float]]:
     """A card with a Before panel and an After panel and a teal arrow between them.
 
     orientation: 'horizontal' puts them side by side; 'vertical' puts Before on top,
                  for content that is wide and short.
     share:       how much of the space the Before panel takes (0.5 = half).
+    card:        the card to draw on; a new showcase card when left out. Pass
+                 new_cover_card() to lay a before/after out on a cover.
     Returns the card and the two scales used.
     """
-    card = new_card()
+    card = card if card is not None else new_card()
     draw = ImageDraw.Draw(card)
     left, top, right, bottom = inner(card)
     if orientation == "horizontal":
@@ -263,6 +294,90 @@ def thumbnail(path: Path, out_dir: Path, width: int = 400) -> Path:
     return out_path
 
 
+# ---- Cover-safe covers ----------------------------------------------------------
+
+def new_cover_card() -> Image.Image:
+    """A blank card for a cover: smaller than a showcase card, to fit the safe band."""
+    return Image.new("RGB", COVER_CARD_SIZE, WHITE)
+
+
+def inside(box, outer) -> bool:
+    """Is box (left, top, right, bottom) wholly within outer?"""
+    return box[0] >= outer[0] and box[1] >= outer[1] and box[2] <= outer[2] and box[3] <= outer[3]
+
+
+def drawn_box(image: Image.Image, background: str) -> tuple[int, int, int, int] | None:
+    """The smallest box holding every pixel that is not the background colour."""
+    from PIL import ImageChops
+
+    return ImageChops.difference(image.convert("RGB"), Image.new("RGB", image.size, background)).getbbox()
+
+
+def cover(card: Image.Image, headline: str, out_path: Path, style: str = "navy") -> dict:
+    """Write a cover-safe 1600x1200 cover: headline, card and demo label inside the safe band.
+
+    There is no title strip. The headline is 4 to 8 words in Inter SemiBold at 64 px
+    or larger (the largest size that fits is used). Outside the band is background
+    only, so a centred crop to 16:9 or 2:1 loses nothing.
+    style: 'navy' (navy background, white headline, white card) or 'surface'.
+    Returns the path, the headline size used, and the box of each element.
+    """
+    if card.size != COVER_CARD_SIZE:
+        raise ValueError(f"A cover card must be {COVER_CARD_SIZE[0]}x{COVER_CARD_SIZE[1]}; this one is {card.size[0]}x{card.size[1]}")
+    if not 4 <= len(headline.split()) <= 8:
+        raise ValueError(f"A cover headline is 4 to 8 words: {headline!r}")
+    if style not in COVER_STYLES:
+        raise ValueError(f"Unknown cover style {style!r}; use one of {sorted(COVER_STYLES)}")
+    background, headline_color, label_color, border = COVER_STYLES[style]
+    band_width = COVER_BAND[2] - COVER_BAND[0]
+    sizes = [size for size in COVER_HEADLINE_SIZES if text_width(headline, size, "semibold") <= band_width]
+    if not sizes:
+        raise ValueError(f"The headline doesn't fit the safe band at {COVER_HEADLINE_SIZES[-1]} px: {headline!r}")
+
+    canvas = Image.new("RGB", (WIDTH, HEIGHT), background)
+    draw = ImageDraw.Draw(canvas)
+    headline_at, label_at = (COVER_BAND[0], COVER_HEADLINE_Y), (COVER_BAND[2], COVER_LABEL_Y)
+    text(draw, headline_at, headline, sizes[0], "semibold", headline_color, anchor="lm")
+    canvas.paste(card.convert("RGB"), COVER_CARD_BOX[:2])
+    if border:
+        draw.rectangle((COVER_CARD_BOX[0], COVER_CARD_BOX[1], COVER_CARD_BOX[2] - 1, COVER_CARD_BOX[3] - 1), outline=border)
+    text(draw, label_at, FOOTNOTE, 22, "regular", label_color, anchor="rm")
+
+    boxes = {
+        "headline": draw.textbbox(headline_at, headline, font=font("semibold", sizes[0]), anchor="lm"),
+        "card": COVER_CARD_BOX,
+        "label": draw.textbbox(label_at, FOOTNOTE, font=font("regular", 22), anchor="rm"),
+    }
+    outside = [name for name, box in boxes.items() if not inside(box, COVER_BAND)]
+    if outside:
+        raise ValueError(f"Outside the safe band {COVER_BAND}: {', '.join(outside)}")
+    everything = drawn_box(canvas, background)
+    assert everything is not None and inside(everything, COVER_BAND), ("a pixel was drawn outside the safe band", everything)
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out_path, "PNG")
+    with Image.open(out_path) as check:
+        assert check.size == (WIDTH, HEIGHT) and check.mode == "RGB" and not check.info, (check.size, check.mode, check.info)
+    return {"path": out_path, "headline_size": sizes[0], "boxes": boxes, "drawn": everything, "style": style}
+
+
+def cover_previews(path: Path, out_dir: Path, width: int = 400) -> dict[str, Path]:
+    """Write what a platform may show of a cover: the centred 16:9 and 2:1 crops,
+    and small copies of the full image and both crops. Returns the files written."""
+    path = Path(path)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written = {"full-small": thumbnail(path, out_dir, width)}
+    with Image.open(path) as image:
+        full = image.convert("RGB")
+    for name, box in COVER_CROPS.items():
+        crop_path = out_dir / f"{path.stem}-{name}.png"
+        full.crop(box).save(crop_path, "PNG")
+        written[name] = crop_path
+        written[f"{name}-small"] = thumbnail(crop_path, out_dir, width)
+    return written
+
+
 # ---- Self-test ----------------------------------------------------------------
 
 def _placeholder(size: tuple[int, int], label: str, fill: str = "#DCE6F2") -> Image.Image:
@@ -322,6 +437,58 @@ def self_test() -> int:
     bullet_list(card, (1040, 120, 1480, 900), ["Grouped by owner", "Urgent first, then the oldest request"])
     compose(card, "A daily summary lists what's open", out / "5-stack.png")
 
+    # 5. Cover-safe covers, in both styles: every element inside the safe band, and
+    #    nothing but background outside it, so both crops keep everything.
+    for style, (background, _, _, _) in COVER_STYLES.items():
+        card = new_cover_card()
+        place(card, _placeholder((1200, 420), "cover content"), inner(card))
+        made = cover(card, "See overdue work at a glance", out / f"6-cover-{style}.png", style=style)
+        assert made["headline_size"] >= COVER_HEADLINE_SIZES[-1] == 64
+        assert set(made["boxes"]) == {"headline", "card", "label"}
+        for name, box in made["boxes"].items():
+            assert inside(box, COVER_BAND), (style, name, box)
+        with Image.open(made["path"]) as image:
+            assert image.size == (WIDTH, HEIGHT) and image.mode == "RGB" and not image.info
+            assert inside(drawn_box(image, background), COVER_BAND), "something is drawn outside the band"
+            for point in ((0, 0), (WIDTH - 1, 0), (0, HEIGHT - 1), (WIDTH - 1, HEIGHT - 1), (WIDTH // 2, 110), (WIDTH // 2, 1090)):
+                assert image.getpixel(point) == _rgb(background), (style, point)
+        previews = cover_previews(made["path"], out)
+        for name, crop_box in COVER_CROPS.items():
+            assert inside(COVER_BAND, crop_box), "the band must survive this crop"
+            with Image.open(previews[name]) as crop:
+                assert crop.size == (crop_box[2] - crop_box[0], crop_box[3] - crop_box[1]), crop.size
+                drawn = drawn_box(crop, background)
+                assert drawn[1] >= 20 and drawn[3] <= crop.height - 20, "the crop cuts into the content"
+            with Image.open(previews[f"{name}-small"]) as small:
+                assert small.width == 400
+        with Image.open(previews["full-small"]) as small:
+            assert small.size == (400, 300)
+    assert COVER_CROPS["16x9"][3] - COVER_CROPS["16x9"][1] == 900 and COVER_CROPS["2x1"][3] - COVER_CROPS["2x1"][1] == 800
+
+    # Cover headlines: 4 to 8 words, 64 px or larger, and they must fit the band.
+    long_headline = "Form entries assigned and alerted automatically"
+    try:
+        size = cover(new_cover_card(), long_headline, out / "7-cover-long-headline.png")["headline_size"]
+        assert size >= 64 and text_width(long_headline, size, "semibold") <= COVER_BAND[2] - COVER_BAND[0]
+        (out / "7-cover-long-headline.png").unlink()
+    except ValueError:
+        pass  # too wide even at 64 px: refused, which is the rule working
+    for bad in ("Too short here", "This headline has far too many words to be allowed",
+                "Extraordinarily overcomplicated headlines unquestionably overflow comfortably beyond boundaries"):
+        try:
+            cover(new_cover_card(), bad, out / "bad-cover.png")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"cover headline accepted: {bad!r}")
+    try:
+        cover(new_card(), "A showcase card is too big", out / "bad-cover.png")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a card of the wrong size was accepted as a cover card")
+    assert not (out / "bad-cover.png").exists()
+
     # The template itself.
     with Image.open(first) as image:
         assert image.size == (1600, 1200) and not image.info
@@ -355,6 +522,8 @@ def self_test() -> int:
     print("  checked: Inter Regular and SemiBold load; licence file is OFL 1.1; 1600x1200 RGB with no embedded fields;")
     print("  strip, background, card border and margin colours; fill-the-box scaling; 2x cap on captures;")
     print("  before/after side by side and stacked; shared-scale stack; captions of 4-8 words; 72 px headline minimum; 400 px thumbnail")
+    print(f"  covers (navy and surface): headline, card and label boxes inside the safe band {COVER_BAND}; no pixel drawn outside it;")
+    print("  16:9 (1600x900) and 2:1 (1600x800) crops keep everything; headline of 4-8 words at 64 px or more; wrong card size refused")
     return 0
 
 
