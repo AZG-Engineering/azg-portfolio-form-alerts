@@ -35,6 +35,7 @@ script runs; it is never stored.
 | `tests\` | 46 tests, run with Node. No Google account needed. One of them replays the walkthrough in `DEPLOY.md`. |
 | `DEPLOY.md` | The owner's 15-minute guide: create the form, paste the script, run it, capture screenshots. |
 | `tools\frame_screenshots.py` | Turns the raw captures into finished 1600x1200 images. |
+| `tools\showcase.py`, `tools\fonts\` | The AZG showcase kit (the screenshot template) and the Inter font it uses. |
 | `screenshots\` | The finished images, once the captures exist. |
 
 ## How to run it
@@ -64,6 +65,15 @@ python -m venv .venv
 ```
 
 `--self-test` checks the framing tool with placeholder images.
+
+The frame (navy strip, caption, white card, footer) comes from the AZG showcase kit,
+`tools\showcase.py`, which follows the AZG build style guide. Don't edit that copy:
+change the kit in `Products\showcase-kit\` and sync it. What the tool itself decides
+is at the top of `tools\frame_screenshots.py`: the captions (`SHOTS`), what is
+trimmed off each capture (`CROPS`), and the points listed beside the summary email
+(`SUMMARY_POINTS`). The raw captures are never changed. Captures are enlarged at
+most 2x. The first image shows a form entry as text, taken from
+`sample-data\responses.csv`, above the real sheet rows.
 
 ## How to change it
 
@@ -135,4 +145,12 @@ by pip into `.venv`:
 Pillow has no other Python dependencies. Everything a buyer would run, the two
 `.gs` files, has no third-party dependency at all.
 
-The framed screenshots use the Segoe UI font that ships with Windows.
+Kept in this repository, for the screenshots only:
+
+| Item | Version | Licence | Where |
+| --- | --- | --- | --- |
+| Inter font (Regular, SemiBold) | 4.1 | SIL Open Font License 1.1 | `tools\fonts\`, with the licence text in `tools\fonts\OFL.txt` |
+| AZG showcase kit | 1.0.0 | AZG Engineering's own | `tools\showcase.py`, an exact copy of `Products\showcase-kit\showcase.py` |
+
+No system font is drawn into the framed images. The text inside the captures
+themselves is whatever Google's pages used.
