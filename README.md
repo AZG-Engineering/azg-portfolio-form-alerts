@@ -114,9 +114,13 @@ the script's own three triggers.
   Google Workspace. The script does not queue or retry.
 - The daily summary goes to the script owner only.
 - One form and one response tab per script.
-- Not tested inside Google by the builder (no account access by design). The tests
-  cover the logic and the sheet, mail and trigger calls against stand-ins; the
-  first real run is step 12 of `DEPLOY.md`.
+- It ran live in Google on 2026-10-02, following `DEPLOY.md`: setup, 4 form
+  entries, 2 status edits, the daily summary, and a Run Log with every row OK.
+  Google now creates the form's response range as a Sheets Table; the three
+  columns the script adds joined that table without trouble.
+- The offline tests cover the logic and the sheet, mail and trigger calls against
+  stand-ins. They don't model the Sheets Table; the live run is the evidence for
+  that.
 
 ## Permissions
 
