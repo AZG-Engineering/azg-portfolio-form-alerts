@@ -36,7 +36,7 @@ script runs; it is never stored.
 | `DEPLOY.md` | The owner's 15-minute guide: create the form, paste the script, run it, capture screenshots. |
 | `tools\frame_screenshots.py` | Turns the raw captures into finished 1600x1200 images. |
 | `tools\showcase.py`, `tools\fonts\` | The AZG showcase kit (the screenshot template) and the Inter font it uses. |
-| `screenshots\` | The finished images, once the captures exist. |
+| `screenshots\` | The finished images: `0-cover.png` (a cover that survives being cropped to a wider frame) and three showcase images. |
 
 ## How to run it
 
@@ -74,6 +74,12 @@ trimmed off each capture (`CROPS`), and the points listed beside the summary ema
 (`SUMMARY_POINTS`). The raw captures are never changed. Captures are enlarged at
 most 2x. The first image shows a form entry as text, taken from
 `sample-data\responses.csv`, above the real sheet rows.
+
+The same run also writes the cover, `0-cover.png`: the form entry, the sheet rows
+and the alert's subject line in one compact before/after, from the same captures.
+It has no title strip: the headline (`COVER_HEADLINE`), the content and the demo
+label sit in a band that survives a crop to 16:9 or 2:1. Both crops are written to
+`screenshots\_work\` to look at.
 
 ## How to change it
 
@@ -154,7 +160,7 @@ Kept in this repository, for the screenshots only:
 | Item | Version | Licence | Where |
 | --- | --- | --- | --- |
 | Inter font (Regular, SemiBold) | 4.1 | SIL Open Font License 1.1 | `tools\fonts\`, with the licence text in `tools\fonts\OFL.txt` |
-| AZG showcase kit | 1.0.0 | AZG Engineering's own | `tools\showcase.py`, an exact copy of `Products\showcase-kit\showcase.py` |
+| AZG showcase kit | 1.1.0 | AZG Engineering's own | `tools\showcase.py`, an exact copy of `Products\showcase-kit\showcase.py` |
 
 No system font is drawn into the framed images. The text inside the captures
 themselves is whatever Google's pages used.

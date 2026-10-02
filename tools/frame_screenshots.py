@@ -12,6 +12,10 @@ tools\\showcase.py. This tool decides what goes on each card:
   shot 2  the alert email: subject and body
   shot 3  the daily summary email: subject and body, with what it contains
   shot 4  the Run Log, if it was captured
+  cover   0-cover.png: a compact before/after (the form entry, the sheet rows,
+          the alert's subject line) made from the same captures. Cover-safe: no
+          title strip, and everything sits in a band that survives a crop to
+          16:9 or 2:1. Both crops are written to screenshots\\_work\\ to look at.
 
 - Captures whose file names start with the same number belong to the same shot.
 - Captures are enlarged to fill the card, never beyond twice their size, so the
@@ -79,6 +83,10 @@ CROPS = {
 # Assigned To columns, which the script fills in. (left, top, right, bottom) in pixels.
 SHEET_HIGHLIGHT = (499, 1, 723, 121)
 
+COVER_FILE = "0-cover.png"
+COVER_HEADLINE = "Every form entry assigned and alerted"
+COVER_FIELDS = ("Your name", "Request type", "Priority", "What do you need?")  # the form fields on the cover
+
 EMAIL_LABELS = ("Subject", "Email")
 SUMMARY_POINTS = [
     "One email a day, to the sheet owner",
@@ -132,11 +140,92 @@ def form_panel(size: tuple[int, int]) -> Image.Image:
     return panel
 
 
-def card_form_to_sheet(parts: list[Image.Image]) -> tuple[Image.Image, float]:
-    """Before: the form entry. After: the sheet rows, with the script's two columns boxed."""
-    sheet = parts[0].copy()
+def boxed_sheet(sheet: Image.Image) -> Image.Image:
+    """The cropped sheet capture with the two columns the script fills boxed in teal."""
+    sheet = sheet.copy()
     if sheet.size == (724, 122):  # the real capture, cropped as in CROPS
         ImageDraw.Draw(sheet).rounded_rectangle(SHEET_HIGHLIGHT, radius=6, outline=kit.TEAL, width=3)
+    return sheet
+
+
+def form_strip(size: tuple[int, int]) -> Image.Image:
+    """The form entry as one line of fields, for the cover: question above, answer below."""
+    width, height = size
+    strip = Image.new("RGB", size, kit.SURFACE)
+    draw = ImageDraw.Draw(strip)
+    answers = dict(featured_response())
+    fields = [(question, answers[question]) for question in COVER_FIELDS]
+    margin, gap = 24, 40
+    for value_size in (40, 38, 36, 34, 32):  # the largest size at which all four answers fit
+        widths = [max(kit.text_width(q, 20), kit.text_width(a, value_size, "semibold")) for q, a in fields]
+        if sum(widths) + gap * (len(fields) - 1) <= width - 2 * margin:
+            break
+    else:
+        raise SystemExit("The form entry doesn't fit on one line of the cover")
+    spare = (width - 2 * margin - sum(widths) - gap * (len(fields) - 1)) / (len(fields) - 1)
+    x = margin
+    for (question, answer), field_width in zip(fields, widths):
+        kit.text(draw, (x, height // 2 - 30), question, 20, "regular", kit.SLATE, anchor="lm")
+        kit.text(draw, (x, height // 2 + 14), answer, value_size, "semibold", kit.INK, anchor="lm")
+        x += field_width + gap + spare
+    draw.rectangle((0, 0, width - 1, height - 1), outline=kit.LINE)
+    return strip
+
+
+def build_cover(raw_dir: Path, out_dir: Path, crops: dict[str, dict[str, int]], previews: Path | None) -> dict | None:
+    """The cover: the form entry, an arrow, the sheet rows, and the alert's subject line.
+
+    Uses the first shot-1 capture (the sheet) and, if there is one, the first shot-2
+    capture (the alert subject). Captures stay at 2x or less.
+    """
+    captures = sorted(p for p in raw_dir.glob("*") if p.suffix.lower() in (".png", ".jpg", ".jpeg"))
+    sheets = [p for p in captures if shot_number(p) == "1"]
+    subjects = [p for p in captures if shot_number(p) == "2"]
+    if not sheets:
+        print(f"  cover: no capture starting with '1' in {raw_dir.name}\\ - skipped")
+        return None
+    sheet = boxed_sheet(load(sheets[0], crops.get(sheets[0].name)))
+    subject = load(subjects[0], crops.get(subjects[0].name)) if subjects else None
+
+    card = kit.new_cover_card()
+    draw = ImageDraw.Draw(card)
+    left, right, y = 28, card.width - 28, 22
+    label_row, strip_height, arrow_gap, subject_height = 40, 104, 50, 44
+
+    kit.panel_label(draw, (left, y + label_row // 2 - 2), "Before", "a form entry comes in (shown here as text)")
+    y += label_row
+    card.paste(form_strip((right - left, strip_height)), (left, y))
+    y += strip_height
+    kit.arrow(draw, ((left + right) // 2, y + arrow_gap // 2), "down", size=36)
+    y += arrow_gap
+
+    kit.panel_label(draw, (left, y + label_row // 2 - 2), "After", "it lands in the sheet with a status and an owner", fill=kit.TEAL)
+    y += label_row
+    box, sheet_scale = kit.place(card, sheet, (left, y, right, card.height), kit.MAX_CAPTURE_UPSCALE, align="left", valign="top")
+    y = box[3] + 16
+    scales = [sheet_scale]
+    if subject is not None and y + subject_height <= card.height - 16:
+        note = "and its owner gets an alert:"
+        kit.text(draw, (left, y + subject_height // 2), note, 22, "regular", kit.SLATE, anchor="lm")
+        x = left + round(kit.text_width(note, 22)) + 18
+        _, subject_scale = kit.place(card, subject, (x, y, right, y + subject_height), kit.MAX_CAPTURE_UPSCALE,
+                                     align="left", valign="center")
+        scales.append(subject_scale)
+
+    made = kit.cover(card, COVER_HEADLINE, out_dir / COVER_FILE)
+    used = [sheets[0].name] + ([subjects[0].name] if len(scales) == 2 else [])
+    print(f"  cover: {COVER_FILE}  {kit.WIDTH}x{kit.HEIGHT}  cover-safe, {made['style']} style, headline at "
+          f"{made['headline_size']} px, captures at {', '.join(f'{s:.2f}x' for s in scales)}  from {', '.join(used)}")
+    print(f"    everything drawn sits in {made['drawn']}, inside the safe band {kit.COVER_BAND}")
+    if previews:
+        written = kit.cover_previews(made["path"], previews)
+        print(f"    previews in {previews.name}\\: " + ", ".join(path.name for path in written.values()))
+    return {**made, "scales": scales, "sources": used}
+
+
+def card_form_to_sheet(parts: list[Image.Image]) -> tuple[Image.Image, float]:
+    """Before: the form entry. After: the sheet rows, with the script's two columns boxed."""
+    sheet = boxed_sheet(parts[0])
     left, top, right, bottom = kit.inner(kit.new_card())
     scale = min(kit.MAX_CAPTURE_UPSCALE, (right - left) / sheet.width)
     usable = bottom - top - kit.ARROW_GAP - 2 * kit.LABEL_ROW
@@ -265,9 +354,24 @@ def self_test() -> int:
     assert all(answer and "@" not in answer for _, answer in fields)
     for shot in SHOTS.values():
         assert 4 <= len(shot.caption.split()) <= 8, shot.caption
+
+    # The cover: built from the same captures, cover-safe, captures at 2x or less.
+    cover = build_cover(raw, out, crops, None)
+    assert cover is not None and cover["path"].name == COVER_FILE
+    assert cover["sources"] == ["1-sheet.png", "2a-alert-subject.png"], cover["sources"]
+    assert all(scale <= kit.MAX_CAPTURE_UPSCALE for scale in cover["scales"]), cover["scales"]
+    assert cover["headline_size"] >= 64 and 4 <= len(COVER_HEADLINE.split()) <= 8
+    assert all(kit.inside(box, kit.COVER_BAND) for box in cover["boxes"].values()), cover["boxes"]
+    assert kit.inside(cover["drawn"], kit.COVER_BAND), cover["drawn"]
+    with Image.open(cover["path"]) as image:
+        assert image.size == (kit.WIDTH, kit.HEIGHT) and not image.info
+    assert set(COVER_FIELDS) <= {question for question, _ in fields}
+    assert {name: digest(raw / name) for name in placeholders} == before, "a raw capture was changed by the cover"
+
     print(f"Self-test passed: {len(records)} images framed at {kit.WIDTH}x{kit.HEIGHT}; parts stacked by shot number; "
           f"crops applied; raw files unchanged; no capture enlarged beyond {kit.MAX_CAPTURE_UPSCALE:.0f}x; "
-          "form entry read from the sample data; shot 4 skipped as expected")
+          "form entry read from the sample data; shot 4 skipped as expected; "
+          "cover built inside the safe band with its headline at 64 px or more")
     return 0
 
 
@@ -280,8 +384,9 @@ def main(argv: list[str]) -> int:
     print(f"Framing captures from {RAW_DIR.relative_to(ROOT)}\\ (showcase kit {kit.__version__})")
     before = {p.name: digest(p) for p in RAW_DIR.glob("*") if p.is_file()}
     records = frame_all(RAW_DIR, SHOTS_DIR, CROPS, thumbnails=WORK_DIR)
+    cover = build_cover(RAW_DIR, SHOTS_DIR, CROPS, WORK_DIR)
     unchanged = before == {p.name: digest(p) for p in RAW_DIR.glob("*") if p.is_file()}
-    print(f"{len(records)} image(s) written to {SHOTS_DIR.relative_to(ROOT)}\\; "
+    print(f"{len(records) + (cover is not None)} image(s) written to {SHOTS_DIR.relative_to(ROOT)}\\; "
           f"raw captures {'unchanged' if unchanged else 'CHANGED'}; 400 px copies in screenshots\\_work\\")
     return 0 if records and unchanged else 1
 
