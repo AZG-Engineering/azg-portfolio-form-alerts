@@ -1,0 +1,22 @@
+# Python (only used by tools\frame_screenshots.py)
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Secrets (none are used; kept out as a rule)
+.env
+*.env
+credentials*
+token*
+.clasp.json
+.clasprc.json
+
+# Raw screen captures before framing: may show an account name or address
+screenshots/raw/
+screenshots/_work/
+
+# Logs
+*.log
