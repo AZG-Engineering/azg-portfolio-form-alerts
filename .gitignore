@@ -10,7 +10,9 @@ node_modules/
 .env
 *.env
 credentials*
-token*
+token
+token.*
+*.token
 .clasp.json
 .clasprc.json
 
