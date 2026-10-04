@@ -164,3 +164,6 @@ Kept in this repository, for the screenshots only:
 
 No system font is drawn into the framed images. The text inside the captures
 themselves is whatever Google's pages used.
+
+## Licence
+Copyright © 2026 Azimuth Group LLC. All rights reserved. Published as a work sample; no licence to reuse it is granted. The Inter font in `tools\fonts\` is under the SIL Open Font License 1.1 (`tools\fonts\OFL.txt`).
