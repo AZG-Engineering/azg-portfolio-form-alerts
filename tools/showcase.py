@@ -1,4 +1,4 @@
-"""AZG showcase image kit: the screenshot template of the AZG build style guide (section 5).
+"""AZG showcase image kit: the screenshot template of brand system v2, Part D (style guide section 5 before it).
 
 Every showcase image is a 1600x1200 PNG composite:
 
@@ -32,6 +32,16 @@ background outside it:
     kit.cover(card, "See overdue work at a glance", out_path)
     kit.cover_previews(out_path, work_dir)      # both crops, and 400 px thumbnails
 
+The phone export (since 1.2.0) is the same template at 1080x1350 (4:5), for feeds,
+messages and phone previews: a 96 px strip, one 1000x1150 card, the same footer.
+Anything the viewer must read is 22 px or more; a phone headline is 64 px or more.
+
+    card = kit.new_phone_card()                 # a white 1000x1150 image to draw on
+    kit.headline(card, "3 expired · 5 renew soon", card.width // 2, 92, size=72, phone=True)
+    placed, scale = kit.place(card, export_image, (kit.PAD, 170, card.width - kit.PAD, 850), valign="top")
+    kit.phone_text_guard(render_dpi, scale)     # refuses 11 pt text that would come out under 22 px
+    kit.compose_phone(card, "What renews next, at a glance", out_path)
+
 The fonts are the Inter files in the fonts folder next to this module. No system
 font is used.
 
@@ -45,7 +55,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-__version__ = "1.1.0"  # template for style guide v1.2 (1.1.0 adds cover-safe covers)
+__version__ = "1.2.0"  # template for brand system v2 (1.1.0 added cover-safe covers; 1.2.0 adds the phone export)
 
 FONTS = Path(__file__).resolve().parent / "fonts"
 FONT_FILES = {"regular": "Inter-Regular.ttf", "semibold": "Inter-SemiBold.ttf"}
@@ -68,6 +78,17 @@ CAPTION_SIZES = (48, 44)
 FOOTNOTE = "Demo · sample data"
 MAX_CAPTURE_UPSCALE = 2.0
 MIN_READABLE_PX, MIN_HEADLINE_PX = 20, 72
+
+# Phone export (brand system v2, Part D2): 1080x1350 (4:5) for feeds, messages and phone previews.
+PHONE_WIDTH, PHONE_HEIGHT = 1080, 1350
+PHONE_STRIP_HEIGHT = 96
+PHONE_MARGIN = 40  # left, right, and between the strip and the card
+PHONE_BOTTOM = 64  # the band under the card, holding the footer
+PHONE_CARD_BOX = (PHONE_MARGIN, PHONE_STRIP_HEIGHT + PHONE_MARGIN, PHONE_WIDTH - PHONE_MARGIN, PHONE_HEIGHT - PHONE_BOTTOM)
+PHONE_CARD_SIZE = (PHONE_CARD_BOX[2] - PHONE_CARD_BOX[0], PHONE_CARD_BOX[3] - PHONE_CARD_BOX[1])  # 1000 x 1150
+PHONE_CAPTION_LEFT = 44
+PHONE_CAPTION_SIZES = (40, 38, 36)  # the largest that fits is used
+PHONE_MIN_READABLE_PX, PHONE_MIN_HEADLINE_PX = 22, 64
 
 # Cover-safe covers (style guide section 5, "Cover-safe").
 # Everything that carries meaning stays inside the band (left, top, right, bottom).
@@ -154,10 +175,16 @@ def place(card: Image.Image, image: Image.Image, box, max_upscale: float | None 
     return (x, y, x + scaled.width, y + scaled.height), scale
 
 
-def headline(card: Image.Image, string: str, center_x: int, center_y: int, size: int = 84, fill: str = NAVY) -> None:
-    """A big one-line result, e.g. '10 files, 8 OK, 2 need review'."""
-    if size < MIN_HEADLINE_PX:
-        raise ValueError(f"A headline is {MIN_HEADLINE_PX} px or more, so it reads at thumbnail size")
+def headline(card: Image.Image, string: str, center_x: int, center_y: int, size: int = 84, fill: str = NAVY,
+             min_size: int | None = None, phone: bool = False) -> None:
+    """A big one-line result, e.g. '10 files, 8 OK, 2 need review'.
+
+    A desktop headline is 72 px or more; a phone headline (phone=True) is 64 px or more
+    (brand system v2, D2). min_size replaces either floor when given.
+    """
+    floor = min_size if min_size is not None else (PHONE_MIN_HEADLINE_PX if phone else MIN_HEADLINE_PX)
+    if size < floor:
+        raise ValueError(f"A headline is {floor} px or more, so it reads at thumbnail size")
     text(ImageDraw.Draw(card), (center_x, center_y), string, size, "semibold", fill, anchor="mm")
 
 
@@ -378,6 +405,57 @@ def cover_previews(path: Path, out_dir: Path, width: int = 400) -> dict[str, Pat
     return written
 
 
+# ---- Phone export ---------------------------------------------------------------
+
+def new_phone_card() -> Image.Image:
+    """A blank card for the phone export: white, 1000x1150."""
+    return Image.new("RGB", PHONE_CARD_SIZE, WHITE)
+
+
+def phone_text_px(dpi: float, scale: float, points: float = 11) -> float:
+    """How tall text of `points` pt comes out, in image px, when a render at `dpi` is placed at `scale`."""
+    return points / 72 * dpi * scale
+
+
+def phone_text_guard(dpi: float, scale: float, points: float = 11) -> float:
+    """Refuse content whose table text would come out under 22 px on the phone export (D2).
+
+    dpi is the DPI the export was rendered at; scale is the factor place() returned.
+    Returns the size the text comes out at, in px.
+    """
+    px = phone_text_px(dpi, scale, points)
+    if round(px, 6) < PHONE_MIN_READABLE_PX:
+        raise ValueError(f"Table text would be {px:.0f} px; the phone rule is {PHONE_MIN_READABLE_PX} px or more")
+    return px
+
+
+def compose_phone(card: Image.Image, caption: str, out_path: Path) -> Path:
+    """Put a phone card into the phone template and write the finished 1080x1350 PNG."""
+    if card.size != PHONE_CARD_SIZE:
+        raise ValueError(f"A phone card must be {PHONE_CARD_SIZE[0]}x{PHONE_CARD_SIZE[1]}; this one is {card.size[0]}x{card.size[1]}")
+    if not 4 <= len(caption.split()) <= 8:
+        raise ValueError(f"A caption is 4 to 8 words: {caption!r}")
+    sizes = [size for size in PHONE_CAPTION_SIZES
+             if text_width(caption, size, "semibold") <= PHONE_WIDTH - 2 * PHONE_CAPTION_LEFT]
+    if not sizes:
+        raise ValueError(f"The caption is too long for the phone title strip: {caption!r}")
+
+    canvas = Image.new("RGB", (PHONE_WIDTH, PHONE_HEIGHT), SURFACE)
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle((0, 0, PHONE_WIDTH, PHONE_STRIP_HEIGHT - 1), fill=NAVY)
+    text(draw, (PHONE_CAPTION_LEFT, PHONE_STRIP_HEIGHT // 2), caption, sizes[0], "semibold", WHITE, anchor="lm")
+    canvas.paste(card.convert("RGB"), PHONE_CARD_BOX[:2])
+    draw.rectangle((PHONE_CARD_BOX[0], PHONE_CARD_BOX[1], PHONE_CARD_BOX[2] - 1, PHONE_CARD_BOX[3] - 1), outline=LINE, width=1)
+    text(draw, (PHONE_WIDTH - PHONE_MARGIN, (PHONE_CARD_BOX[3] + PHONE_HEIGHT) // 2), FOOTNOTE, 20, "regular", SLATE, anchor="rm")
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out_path, "PNG")
+    with Image.open(out_path) as check:
+        assert check.size == (PHONE_WIDTH, PHONE_HEIGHT) and check.mode == "RGB" and not check.info, (check.size, check.mode, check.info)
+    return out_path
+
+
 # ---- Self-test ----------------------------------------------------------------
 
 def _placeholder(size: tuple[int, int], label: str, fill: str = "#DCE6F2") -> Image.Image:
@@ -489,6 +567,75 @@ def self_test() -> int:
         raise AssertionError("a card of the wrong size was accepted as a cover card")
     assert not (out / "bad-cover.png").exists()
 
+    # 6. Phone export (brand system v2, D2): one sample image, then the frame, footer,
+    #    captions, headline floors and the text guard.
+    assert PHONE_CARD_BOX == (40, 136, 1040, 1286) and PHONE_CARD_SIZE == (1000, 1150)
+    card = new_phone_card()
+    left, top, right, bottom = inner(card)
+    headline(card, "3 expired · 5 renew soon", card.width // 2, 92, size=64, phone=True)
+    rect, scale = place(card, _placeholder((390, 520), "a phone-width capture"), (left, 170, right, 830),
+                        max_upscale=MAX_CAPTURE_UPSCALE, valign="top")
+    assert rect[1] == 170 and rect[3] <= 830 and scale <= MAX_CAPTURE_UPSCALE, (rect, scale)
+    assert phone_text_guard(220, scale) >= PHONE_MIN_READABLE_PX  # 11 pt at 220 DPI, placed at this scale
+    ImageDraw.Draw(card).line((left, rect[3] + 36, right, rect[3] + 36), fill=LINE, width=2)
+    bullet_list(card, (left, rect[3] + 72, right, bottom), ["Flags say a word, not just a colour",
+                                                           "Every number lives on one settings tab"], size=32, gap=28)
+    phone = compose_phone(card, "What renews next, at a glance", out / "8-phone.png")
+    with Image.open(phone) as image:
+        assert image.size == (PHONE_WIDTH, PHONE_HEIGHT) == (1080, 1350) and image.mode == "RGB" and not image.info
+        assert image.getpixel((5, 5)) == _rgb(NAVY) and image.getpixel((540, PHONE_STRIP_HEIGHT - 1)) == _rgb(NAVY), "strip"
+        assert image.getpixel((540, PHONE_STRIP_HEIGHT)) == _rgb(SURFACE), "the strip is 96 px"
+        assert image.getpixel((5, PHONE_HEIGHT - 5)) == _rgb(SURFACE), "background"
+        l, t, r, b = PHONE_CARD_BOX
+        assert (l, PHONE_WIDTH - r, t - PHONE_STRIP_HEIGHT, PHONE_HEIGHT - b) == (40, 40, 40, 64), "card margins"
+        for point in ((l, 700), (r - 1, 700), (540, t), (540, b - 1)):
+            assert image.getpixel(point) == _rgb(LINE), ("card border", point)
+        for point in ((l - 1, 700), (r, 700), (540, t - 1), (540, b)):
+            assert image.getpixel(point) == _rgb(SURFACE), ("margin outside the card", point)
+        assert image.getpixel((l + 3, t + 3)) == _rgb(WHITE), "card"
+        footer_ink = drawn_box(image.crop((0, b, PHONE_WIDTH, PHONE_HEIGHT)), SURFACE)
+        assert footer_ink is not None and footer_ink[0] > PHONE_WIDTH // 2, ("footer missing or not at the right", footer_ink)
+        assert abs(footer_ink[2] - (PHONE_WIDTH - PHONE_MARGIN)) <= 2, ("footer right edge is not at x = 1040", footer_ink)
+    # Phone captions: 4 to 8 words that fit at 36 px.
+    for bad in ("Too short", "This caption has far too many words to be allowed here",
+                "Extraordinarily overcomplicated captions unquestionably overflow comfortably beyond boundaries"):
+        try:
+            compose_phone(new_phone_card(), bad, out / "bad-phone.png")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"phone caption accepted: {bad!r}")
+    for ok in ("Renewals tracked without spreadsheets", "What renews next and what it costs now"):
+        assert len(ok.split()) in (4, 8)
+        compose_phone(new_phone_card(), ok, out / "phone-caption-check.png")
+    (out / "phone-caption-check.png").unlink()
+    try:
+        compose_phone(new_card(), "A showcase card is too big", out / "bad-phone.png")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a card of the wrong size was accepted as a phone card")
+    assert not (out / "bad-phone.png").exists()
+    # Headline floors: phone 64 px, desktop 72 px (unchanged), min_size replaces either.
+    headline(new_phone_card(), "64 px reads on a phone", 500, 100, size=64, phone=True)
+    headline(new_card(), "72 px on the desktop", 500, 100, size=72)
+    headline(new_card(), "60 px when asked", 500, 100, size=60, min_size=60)
+    for size, kwargs in ((63, {"phone": True}), (71, {}), (59, {"min_size": 60})):
+        try:
+            headline(new_phone_card(), "too small", 500, 100, size=size, **kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"a {size} px headline was accepted with {kwargs}")
+    # Text guard: 11 pt text must come out at 22 px or more.
+    assert abs(phone_text_guard(72, 2.0) - 22) < 1e-9 and abs(phone_text_px(220, 1.0) - 11 / 72 * 220) < 1e-9
+    try:
+        phone_text_guard(72, 21 / 11)  # 21 px
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("21 px table text was accepted on the phone export")
+
     # The template itself.
     with Image.open(first) as image:
         assert image.size == (1600, 1200) and not image.info
@@ -524,6 +671,9 @@ def self_test() -> int:
     print("  before/after side by side and stacked; shared-scale stack; captions of 4-8 words; 72 px headline minimum; 400 px thumbnail")
     print(f"  covers (navy and surface): headline, card and label boxes inside the safe band {COVER_BAND}; no pixel drawn outside it;")
     print("  16:9 (1600x900) and 2:1 (1600x800) crops keep everything; headline of 4-8 words at 64 px or more; wrong card size refused")
+    print(f"  phone export: 1080x1350 RGB with no embedded fields; 96 px strip; card box {PHONE_CARD_BOX} with its border and all four margins;")
+    print("  footer right-aligned at x = 1040; captions of 4-8 words that fit at 36 px; 64 px phone headline floor (desktop stays 72);")
+    print("  text guard refuses 21 px and accepts 22 px; wrong card size refused")
     return 0
 
 
