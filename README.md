@@ -160,7 +160,7 @@ Kept in this repository, for the screenshots only:
 | Item | Version | Licence | Where |
 | --- | --- | --- | --- |
 | Inter font (Regular, SemiBold) | 4.1 | SIL Open Font License 1.1 | `tools\fonts\`, with the licence text in `tools\fonts\OFL.txt` |
-| AZG showcase kit | 1.1.0 | AZG Engineering's own | `tools\showcase.py`, an exact copy of `Products\showcase-kit\showcase.py` |
+| AZG showcase kit | 1.2.0 | AZG Engineering's own | `tools\showcase.py`, an exact copy of `Products\showcase-kit\showcase.py` |
 
 No system font is drawn into the framed images. The text inside the captures
 themselves is whatever Google's pages used.
