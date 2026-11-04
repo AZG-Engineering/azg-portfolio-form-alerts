@@ -22,3 +22,6 @@ screenshots/_work/
 
 # Logs
 *.log
+
+# Local tooling configuration
+.claude/
